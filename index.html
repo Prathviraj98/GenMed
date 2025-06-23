@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GenMed - Indian Generic Medicine Finder</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    /* Mobile styles */
+    @media (max-width: 768px) {
+      .mobile-container {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .search-container {
+        position: sticky;
+        top: 0;
+        background: white;
+        padding: 1rem;
+        z-index: 10;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      }
+      .results-dropdown {
+        max-height: 250px;
+        overflow-y: auto;
+      }
+    }
+    
+    /* Desktop styles */
+    @media (min-width: 769px) {
+      .desktop-header {
+        position: sticky;
+        top: 0;
+        background: white;
+        padding: 1rem 0;
+        z-index: 10;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      }
+      .desktop-search {
+        width: 50%;
+        margin: 0 auto;
+      }
+    }
+
+    /* Scroll to Top Button */
+    .scroll-to-top {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: #4F46E5; /* Indigo color */
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      transition: background-color 0.3s;
+      z-index: 20;
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    .scroll-to-top.active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .scroll-to-top:hover {
+      background-color: #4338CA; /* Darker Indigo */
+    }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function App() {
+      const [searchTerm, setSearchTerm] = useState("");
+      const [suggestions, setSuggestions] = useState([]);
+      const [medicines, setMedicines] = useState([]);
+      const [selectedMedicine, setSelectedMedicine] = useState(null);
+      const [isLoading, setIsLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [showScrollButton, setShowScrollButton] = useState(false);
+      const searchContainerRef = useRef(null);
+      const searchInputRef = useRef(null);
+      const suggestionsRef = useRef(null);
+
+      // Fetch suggestions as user types
+      useEffect(() => {
+        if (searchTerm.length < 2) {
+          setSuggestions([]);
+          return;
+        }
+        
+        const debounceTimer = setTimeout(() => {
+          axios.get(`http://localhost:5000/api/medicines/suggestions?q=${searchTerm}`)
+            .then(response => {
+              setSuggestions(response.data);
+              setError(null);
+            })
+            .catch(error => {
+              console.error('Error fetching suggestions:', error);
+              setError('Failed to load suggestions');
+              setSuggestions([]);
+            });
+        }, 300);
+
+        return () => clearTimeout(debounceTimer);
+      }, [searchTerm]);
+
+      // Close suggestions when clicking outside or mouse leaves search area
+      useEffect(() => {
+        const handleClickOutside = (event) => {
+          if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+            setSuggestions([]);
+          }
+        };
+
+        const handleMouseLeave = (event) => {
+          // Check if mouse left the search container area (including suggestions dropdown)
+          if (searchContainerRef.current && 
+              !searchContainerRef.current.contains(event.relatedTarget)) {
+            setSuggestions([]);
+          }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        searchContainerRef.current?.addEventListener('mouseleave', handleMouseLeave);
+        
+        return () => {
+          document.removeEventListener('mousedown', handleClickOutside);
+          searchContainerRef.current?.removeEventListener('mouseleave', handleMouseLeave);
+        };
+      }, []);
+
+      // Check scroll position for scroll-to-top button
+      useEffect(() => {
+        const handleScroll = () => {
+          if (window.scrollY > 300) {
+            setShowScrollButton(true);
+          } else {
+            setShowScrollButton(false);
+          }
+        };
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+      }, []);
+
+      const handleSearch = async () => {
+        if (!searchTerm.trim()) return;
+        
+        setIsLoading(true);
+        setSuggestions([]);
+        setError(null);
+        
+        try {
+          const response = await axios.get(
+            `http://localhost:5000/api/medicines/search?q=${searchTerm}`
+          );
+          setMedicines(response.data);
+          // Close suggestions after results are shown
+          setSuggestions([]);
+        } catch (error) {
+          console.error("Error fetching medicines:", error);
+          setError('Failed to search medicines. Please try again.');
+          setMedicines([]);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+          setSuggestions([]);
+          handleSearch();
+        }
+      };
+
+      const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      return (
+        <div className="mobile-container">
+          {/* Header - Centered at the Top */}
+          <div className="header-container w-full py-4">
+            <div className="container mx-auto text-center">
+              <h1 className="text-2xl md:text-3xl font-bold text-indigo-700">GenMed</h1>
+              <p className="text-gray-600 hidden md:block mt-1">
+                Find Indian generic medicines
+              </p>
+            </div>
+          </div>
+
+          {/* Search Bar Container (Fixed below header in Mobile) */}
+          <div className="search-container md:sticky md:top-16" ref={searchContainerRef}>
+            <div className="container mx-auto">
+              <div className="desktop-search relative">
+                <input
+                  type="text"
+                  placeholder="Search disease or medicine..."
+                  className="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  ref={searchInputRef}
+                />
+                <button
+                  onClick={() => {
+                    setSuggestions([]);
+                    handleSearch();
+                  }}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-indigo-600 text-white px-3 py-1 rounded-lg hover:bg-indigo-700 transition text-sm"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : null}
+                  Search
+                </button>
+
+                {/* Suggestions Dropdown */}
+                {suggestions.length > 0 && (
+                  <div 
+                    className="results-dropdown absolute left-0 right-0 mt-1 bg-white shadow-lg rounded-lg z-10 border border-gray-200"
+                    ref={suggestionsRef}
+                  >
+                    {suggestions.map((item, index) => (
+                      <div
+                        key={index}
+                        className="p-2 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        onClick={() => {
+                          setSearchTerm(item.Disease);
+                          setSuggestions([]);
+                          handleSearch();
+                        }}
+                      >
+                        <div className="font-medium text-sm">{item.Disease}</div>
+                        <div className="text-xs text-gray-600">{item['Generic Name']}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Results Area */}
+          <div className="flex-1 p-4">
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                {error}
+              </div>
+            )}
+
+            {/* Results */}
+            {isLoading ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500">Loading medicines...</p>
+              </div>
+            ) : (
+              <div className="grid gap-3 md:gap-4">
+                {medicines.length > 0 ? (
+                  medicines.map((med, index) => (
+                    <div 
+                      key={index} 
+                      className="bg-white p-3 md:p-4 rounded-lg shadow hover:shadow-md transition cursor-pointer"
+                      onClick={() => setSelectedMedicine(med)}
+                    >
+                      <h3 className="font-bold text-md md:text-lg text-indigo-700">{med['Generic Name']}</h3>
+                      <p className="text-gray-600 mb-1 md:mb-2">For: {med.Disease}</p>
+                      <div className="flex justify-between text-xs md:text-sm">
+                        <span className="bg-gray-100 px-2 py-1 rounded">{med['Group Name']}</span>
+                        <span className="font-medium">₹{med.MRP}</span>
+                        <span>{med['Unit Size']}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  !error && searchTerm && (
+                    <div className="text-center py-8 text-gray-500">
+                      No medicines found for your search
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Scroll to Top Button */}
+          {showScrollButton && (
+            <button 
+              className="scroll-to-top"
+              onClick={scrollToTop}
+              aria-label="Scroll to top"
+            >
+              ↑
+            </button>
+          )}
+
+          {/* Medicine Detail Modal */}
+          {selectedMedicine && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white p-6 rounded-lg max-w-md w-full">
+                <h2 className="text-xl md:text-2xl font-bold mb-2 text-indigo-700">
+                  {selectedMedicine['Generic Name']} <span className="text-sm font-normal text-gray-500">({selectedMedicine['Brand'] || 'No Brand'})</span>
+                </h2>
+                <div className="space-y-2 mb-4">
+                  <p><span className="font-semibold">Disease:</span> {selectedMedicine.Disease}</p>
+                  <p><span className="font-semibold">Group:</span> {selectedMedicine['Group Name']}</p>
+                  <p><span className="font-semibold">Dosage:</span> {selectedMedicine['Unit Size']}</p>
+                  <p><span className="font-semibold">Price:</span> ₹{selectedMedicine.MRP}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedMedicine(null)}
+                  className="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition mt-4"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>

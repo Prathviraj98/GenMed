@@ -49,7 +49,7 @@ function App() {
       <header className="text-center mb-8">
         <h1 className="text-3xl font-bold text-indigo-700">GenMed</h1>
         <p className="text-gray-600">
-          Find Indian generic medicines for diseases
+          Find Indian generic medicines
         </p>
       </header>
 
